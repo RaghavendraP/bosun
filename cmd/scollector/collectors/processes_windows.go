@@ -70,6 +70,18 @@ func c_windows_processes() (opentsdb.MultiDataPoint, error) {
 	for _, y := range core_dst {
 		numberOfLogicalProcessors = uint64(y.NumberOfLogicalProcessors)
 	}
+
+	var totalVisibleMemorySize uint64
+	var os_dst []Win32_OperatingSystem
+	var os_q = wmi.CreateQuery(&os_dst, "")
+	err = queryWmi(os_q, &os_dst)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, z := range os_dst {
+		totalVisibleMemorySize = uint64(z.TotalVisibleMemorySize)
+	}
 	if numberOfLogicalProcessors == 0 {
 		return nil, fmt.Errorf("invalid result: numberOfLogicalProcessors=%v", numberOfLogicalProcessors)
 	}
@@ -174,6 +186,7 @@ func c_windows_processes() (opentsdb.MultiDataPoint, error) {
 		Add(&md, "win.proc.mem.working_set_peak", v.WorkingSetPeak, tags, metadata.Gauge, metadata.Bytes, descWinProcMemWorking_set_peak)
 		Add(&md, "win.proc.mem.working_set_private", v.WorkingSetPrivate, tags, metadata.Gauge, metadata.Bytes, descWinProcMemWorking_set_private)
 		totalPrivateWSMemByName[name] += v.WorkingSetPrivate
+		Add(&md, "win.proc.mem.working_set_private_percent", float64(v.WorkingSetPrivate)/float64(totalVisibleMemorySize)/1024*100, tags, metadata.Gauge, metadata.Pct, descWinProcMemWS_private_percent)
 		Add(&md, "win.proc.priority_base", v.PriorityBase, tags, metadata.Gauge, metadata.None, descWinProcPriority_base)
 		Add(&md, "win.proc.private_bytes", v.PrivateBytes, tags, metadata.Gauge, metadata.Bytes, descWinProcPrivate_bytes)
 		Add(&md, "win.proc.thread_count", v.ThreadCount, tags, metadata.Gauge, metadata.Count, descWinProcthread_count)
@@ -225,6 +238,7 @@ const (
 	descWinProcMemWorking_set         = "Current number of bytes in the working set of this process at any point in time."
 	descWinProcMemWorking_set_peak    = "Maximum number of bytes in the working set of this process at any point in time."
 	descWinProcMemWorking_set_private = "Current number of bytes in the working set that are not shared with other processes."
+	descWinProcMemWS_private_percent  = "Current number of bytes in the working set that are not shared with other processes as percent of total available physical memory in the system."
 	descWinProcPriority_base          = "Current base priority of this process. Threads within a process can raise and lower their own base priority relative to the process base priority of the process."
 	descWinProcPrivate_bytes          = "Current number of bytes this process has allocated that cannot be shared with other processes."
 	descWinProcthread_count           = "Number of threads currently active in this process."

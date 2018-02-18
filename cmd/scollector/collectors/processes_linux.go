@@ -155,6 +155,33 @@ func linuxProcMonitor(w *WatchedProc, md *opentsdb.MultiDataPoint) error {
 		Add(md, "linux.proc.mem.virtual", stats[22], tags, metadata.Gauge, metadata.Bytes, descLinuxProcMemVirtual)
 		Add(md, "linux.proc.mem.rss", stats[23], tags, metadata.Gauge, metadata.Page, descLinuxProcMemRss)
 		Add(md, "linux.proc.mem.rss_bytes", rss*int64(osPageSize), tags, metadata.Gauge, metadata.Bytes, descLinuxProcMemRssBytes)
+
+		var meminfoRE = regexp.MustCompile(`(\w+):\s+(\d+)\s+(\w+)`)
+		mem := make(map[string]float64)
+		if Error := readLine("/proc/meminfo", func(s string) error {
+			m := meminfoRE.FindStringSubmatch(s)
+			if m == nil {
+				return nil
+			}
+			i, Error := strconv.ParseFloat(m[2], 64)
+			if Error != nil {
+				return Error
+			}
+			mem[m[1]] = i
+			return nil
+		}); Error != nil {
+			err = Error
+		}
+
+		var vmrss float64
+		vmrss, err = strconv.ParseFloat(stats[23], 64)
+		if err != nil {
+			return nil
+		}
+		page_size := float64(4*1024)
+		totalMem := float64(int(mem["MemTotal"]) * 1024)
+		Add(md, "linux.proc.mem.percent_used", (vmrss*page_size/totalMem)*100, tags, metadata.Gauge, metadata.Page, descLinuxProcMemUsedPercent)
+
 		Add(md, "linux.proc.char_io", io[0], opentsdb.TagSet{"type": "read"}.Merge(tags), metadata.Counter, metadata.Bytes, descLinuxProcCharIoRead)
 		Add(md, "linux.proc.char_io", io[1], opentsdb.TagSet{"type": "write"}.Merge(tags), metadata.Counter, metadata.Bytes, descLinuxProcCharIoWrite)
 		Add(md, "linux.proc.syscall", io[2], opentsdb.TagSet{"type": "read"}.Merge(tags), metadata.Counter, metadata.Syscall, descLinuxProcSyscallRead)
@@ -184,25 +211,26 @@ func linuxProcMonitor(w *WatchedProc, md *opentsdb.MultiDataPoint) error {
 }
 
 const (
-	descLinuxProcCPUUser      = "The amount of time that this process has been scheduled in user mode."
-	descLinuxProcCPUSystem    = "The amount of time that this process has been scheduled in kernel mode"
-	descLinuxProcMemFaultMin  = "The number of minor faults the process has made which have not required loading a memory page from disk."
-	descLinuxProcMemFaultMax  = "The number of major faults the process has made which have required loading a memory page from disk."
-	descLinuxProcMemVirtual   = "The virtual memory size."
-	descLinuxProcMemRss       = "The resident set size (number of pages the process has in real memory including shared pages)."
-	descLinuxProcMemRssBytes  = "The resident set size (number of bytes the process has in real memory including shared pages)."
-	descLinuxProcCharIoRead   = "The number of bytes which this task has caused to be read from storage. This is simply the sum of bytes which this process passed to read(2) and similar system calls. It includes things such as terminal I/O and is unaffected by whether or not actual physical disk I/O was required (the read might have been satisfied from pagecache)"
-	descLinuxProcCharIoWrite  = "The number of bytes which this task has caused, or shall cause to be written to disk. Similar caveats apply here as with read."
-	descLinuxProcSyscallRead  = "An attempt to count the number of read I/O operations—that is, system calls such as read(2) and pread(2)."
-	descLinuxProcSyscallWrite = "Attempt to count the number of write I/O operations—that is, system calls such as write(2) and pwrite(2)."
-	descLinuxProcIoBytesRead  = "An attempt to count the number of bytes which this process really did cause to be fetched from the storage layer. This is accurate for block-backed filesystems."
-	descLinuxProcIoBytesWrite = "An Attempt to count the number of bytes which this process caused to be sent to the storage layer."
-	descLinuxProcFd           = "The number of open file descriptors."
-	descLinuxSoftFileLimit    = "The soft limit on the number of open file descriptors."
-	descLinuxHardFileLimit    = "The hard limit on the number of open file descriptors."
-	descLinuxProcUptime       = "The length of time, in seconds, since the process was started."
-	descLinuxProcStartTS      = "The timestamp of process start."
-	descLinuxProcCount        = "The number of currently running processes."
+	descLinuxProcCPUUser        = "The amount of time that this process has been scheduled in user mode."
+	descLinuxProcCPUSystem      = "The amount of time that this process has been scheduled in kernel mode"
+	descLinuxProcMemFaultMin    = "The number of minor faults the process has made which have not required loading a memory page from disk."
+	descLinuxProcMemFaultMax    = "The number of major faults the process has made which have required loading a memory page from disk."
+	descLinuxProcMemVirtual     = "The virtual memory size."
+	descLinuxProcMemRss         = "The resident set size (number of pages the process has in real memory including shared pages)."
+	descLinuxProcMemRssBytes    = "The resident set size (number of bytes the process has in real memory including shared pages)."
+	descLinuxProcMemUsedPercent = "The total amount of memory used by the process based on number of pages the process has in real memory. "
+	descLinuxProcCharIoRead     = "The number of bytes which this task has caused to be read from storage. This is simply the sum of bytes which this process passed to read(2) and similar system calls. It includes things such as terminal I/O and is unaffected by whether or not actual physical disk I/O was required (the read might have been satisfied from pagecache)"
+	descLinuxProcCharIoWrite    = "The number of bytes which this task has caused, or shall cause to be written to disk. Similar caveats apply here as with read."
+	descLinuxProcSyscallRead    = "An attempt to count the number of read I/O operations—that is, system calls such as read(2) and pread(2)."
+	descLinuxProcSyscallWrite   = "Attempt to count the number of write I/O operations—that is, system calls such as write(2) and pwrite(2)."
+	descLinuxProcIoBytesRead    = "An attempt to count the number of bytes which this process really did cause to be fetched from the storage layer. This is accurate for block-backed filesystems."
+	descLinuxProcIoBytesWrite   = "An Attempt to count the number of bytes which this process caused to be sent to the storage layer."
+	descLinuxProcFd             = "The number of open file descriptors."
+	descLinuxSoftFileLimit      = "The soft limit on the number of open file descriptors."
+	descLinuxHardFileLimit      = "The hard limit on the number of open file descriptors."
+	descLinuxProcUptime         = "The length of time, in seconds, since the process was started."
+	descLinuxProcStartTS        = "The timestamp of process start."
+	descLinuxProcCount          = "The number of currently running processes."
 )
 
 type byModTime []os.FileInfo
